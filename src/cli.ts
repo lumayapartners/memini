@@ -8,6 +8,7 @@ import { renderMarkdown } from './render.js';
 import { buildDigest } from './digest.js';
 import { installClaudeHooks, mcpConfigSnippet, runPreToolUseHook, runSessionStartHook } from './hooks.js';
 import { Memory, MEMORY_TYPES, MemoryType, SEVERITIES, Severity } from './types.js';
+import { VERSION } from './version.js';
 
 const program = new Command();
 const root = () => findRepoRoot(process.cwd());
@@ -32,7 +33,7 @@ function printMemory(m: Memory, verbose = false): void {
 program
   .name('pm')
   .description('memini — project memory and mistake-prevention guardrails for AI coding agents')
-  .version('0.1.0');
+  .version(VERSION);
 
 program
   .command('init')

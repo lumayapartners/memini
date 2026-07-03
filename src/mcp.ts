@@ -8,6 +8,7 @@ import { findRepoRoot } from './git.js';
 import { renderMarkdown } from './render.js';
 import { buildDigest, formatGuardrailWarning } from './digest.js';
 import { Severity } from './types.js';
+import { VERSION } from './version.js';
 
 function text(s: string) {
   return { content: [{ type: 'text' as const, text: s }] };
@@ -17,7 +18,7 @@ export async function runMcpServer(cwd: string): Promise<void> {
   const root = findRepoRoot(cwd);
   const store = new MemoryStore(root);
 
-  const server = new McpServer({ name: 'memini', version: '0.1.0' });
+  const server = new McpServer({ name: 'memini', version: VERSION });
 
   server.tool(
     'recall_project_context',
