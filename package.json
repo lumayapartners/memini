@@ -1,17 +1,17 @@
 {
   "name": "memini",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Never the same mistake twice — mistake-prevention guardrails and persistent project memory for AI coding agents (Claude Code, Cursor, Windsurf).",
   "license": "MIT",
   "type": "module",
   "author": "Lumaya Partners",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/TanmayKnight/memini.git"
+    "url": "git+https://github.com/lumayapartners/memini.git"
   },
-  "homepage": "https://github.com/TanmayKnight/memini#readme",
+  "homepage": "https://github.com/lumayapartners/memini#readme",
   "bugs": {
-    "url": "https://github.com/TanmayKnight/memini/issues"
+    "url": "https://github.com/lumayapartners/memini/issues"
   },
   "bin": {
     "pm": "./dist/cli.js",
