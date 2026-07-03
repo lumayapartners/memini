@@ -18,9 +18,14 @@ const PATTERNS: SecretPattern[] = [
     label: 'connection-string',
     regex: /\b(postgres(ql)?|mysql|mongodb(\+srv)?|redis|amqp):\/\/[^\s:@]+:[^\s@]+@[^\s]+/gi,
   },
+  { label: 'npm-token', regex: /\bnpm_[A-Za-z0-9]{36,}\b/g },
+  {
+    label: 'url-credentials',
+    regex: /\bhttps?:\/\/[^\s:@/]+:[^\s@/]+@[^\s]+/gi,
+  },
   {
     label: 'password-assignment',
-    regex: /\b(password|passwd|pwd|secret|api[_-]?key|token)\s*[:=]\s*['"][^'"\s]{8,}['"]/gi,
+    regex: /\b(password|passwd|pwd|secret|api[_-]?key|token)\s*[:=]\s*['"]?[^\s'"]{8,}['"]?/gi,
   },
 ];
 

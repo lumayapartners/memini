@@ -45,7 +45,7 @@ program
     renderMarkdown(store);
 
     const gitignore = join(r, '.gitignore');
-    const ignoreLines = `\n# memini: DB is local; markdown views are committed\n${PM_DIR}/memory.db\n${PM_DIR}/memory.db-*\n`;
+    const ignoreLines = `\n# memini: DB and hook shim are local; markdown views are committed\n${PM_DIR}/memory.db\n${PM_DIR}/memory.db-*\n${PM_DIR}/hooks/\n`;
     if (!existsSync(gitignore) || !readFileSync(gitignore, 'utf-8').includes(`${PM_DIR}/memory.db`)) {
       appendFileSync(gitignore, ignoreLines);
     }

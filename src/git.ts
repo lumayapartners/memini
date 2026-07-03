@@ -37,7 +37,13 @@ export function normalizeRepoPath(root: string, filePath: string): string {
   return relative(root, abs).split(sep).join('/');
 }
 
+/** True when a normalized repo path stays inside the repo root. */
+export function isInsideRepo(repoRelPath: string): boolean {
+  return !repoRelPath.startsWith('..') && !isAbsolute(repoRelPath) && repoRelPath !== '';
+}
+
 export function hashFile(root: string, repoRelPath: string): string | null {
+  if (!isInsideRepo(repoRelPath)) return null; // never read outside the repo
   const abs = join(root, repoRelPath);
   if (!existsSync(abs)) return null;
   try {

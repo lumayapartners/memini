@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { MemoryStore } from '../src/store.js';
 import { renderMarkdown } from '../src/render.js';
-import { buildDigest, estimateTokens } from '../src/digest.js';
+import { buildDigest, estimateTokens, formatGuardrailWarning } from '../src/digest.js';
 
 let root: string;
 let store: MemoryStore;
@@ -100,6 +100,23 @@ describe('MemoryStore', () => {
     expect(store.detectStale()).toHaveLength(0);
   });
 
+  it('rejects file refs that escape the repository root', () => {
+    expect(() =>
+      store.add({ type: 'fragile_file', title: 'evil', body: 'x', files: ['../../../etc/passwd'], severity: 'warn' })
+    ).toThrow(/escapes repository root/);
+    expect(() =>
+      store.add({ type: 'fragile_file', title: 'evil-abs', body: 'x', files: ['/etc/passwd'], severity: 'warn' })
+    ).toThrow(/escapes repository root/);
+    // check() on an outside path silently returns nothing (hook fail-open path)
+    expect(store.check('../outside.txt')).toHaveLength(0);
+  });
+
+  it('truncates oversized bodies at write time', () => {
+    const m = store.add({ type: 'decision', title: 'big', body: 'x'.repeat(50_000) });
+    expect(m.body.length).toBeLessThan(17_000);
+    expect(m.body).toContain('[…truncated]');
+  });
+
   it('warn-once session tracking', () => {
     expect(store.hasWarned('s1', 'vercel.json')).toBe(false);
     store.markWarned('s1', 'vercel.json');
@@ -134,5 +151,27 @@ describe('buildDigest', () => {
 
   it('returns empty string for empty store', () => {
     expect(buildDigest(store)).toBe('');
+  });
+
+  it('marks injected memory text as data, not instructions', () => {
+    store.add({ type: 'fragile_file', title: 'F', body: 'x', files: ['vercel.json'], severity: 'warn' });
+    expect(buildDigest(store)).toContain('not instructions');
+    const warning = formatGuardrailWarning('vercel.json', store.check('vercel.json'));
+    expect(warning).toContain('not instructions');
+  });
+});
+
+describe('formatGuardrailWarning', () => {
+  it('caps injected body length', () => {
+    store.add({
+      type: 'fragile_file',
+      title: 'huge',
+      body: 'y'.repeat(15_000),
+      files: ['vercel.json'],
+      severity: 'warn',
+    });
+    const warning = formatGuardrailWarning('vercel.json', store.check('vercel.json'));
+    expect(warning.length).toBeLessThan(2_000);
+    expect(warning).toContain('[…truncated]');
   });
 });

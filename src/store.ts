@@ -12,9 +12,12 @@ import {
   Status,
 } from './types.js';
 import { redactSecrets } from './redact.js';
-import { gitContext, hashFile, normalizeRepoPath } from './git.js';
+import { gitContext, hashFile, isInsideRepo, normalizeRepoPath } from './git.js';
 
 export const PM_DIR = '.memini';
+/** Bodies beyond this are truncated at write time (context-stuffing defense). */
+const MAX_BODY_CHARS = 16_000;
+const SESSION_WARNING_TTL_DAYS = 14;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS memories (
@@ -86,6 +89,9 @@ export class MemoryStore {
     this.db = new Database(join(this.dir, 'memory.db'));
     this.db.pragma('journal_mode = WAL');
     this.db.exec(SCHEMA);
+    // GC stale warn-once rows so the table stays bounded over a repo's lifetime
+    const cutoff = new Date(Date.now() - SESSION_WARNING_TTL_DAYS * 86_400_000).toISOString();
+    this.db.prepare(`DELETE FROM session_warnings WHERE warned_at < ?`).run(cutoff);
   }
 
   static exists(root: string): boolean {
@@ -99,7 +105,9 @@ export class MemoryStore {
   add(input: NewMemory): Memory {
     const now = new Date().toISOString();
     const id = ulid();
-    const { text: body } = redactSecrets(input.body);
+    const rawBody =
+      input.body.length > MAX_BODY_CHARS ? input.body.slice(0, MAX_BODY_CHARS) + ' […truncated]' : input.body;
+    const { text: body } = redactSecrets(rawBody);
     const { text: title } = redactSecrets(input.title);
     const ctx = gitContext(this.root);
     const createdBy = input.createdBy ?? (ctx.user ? `human:${ctx.user}` : 'unknown');
@@ -127,6 +135,9 @@ export class MemoryStore {
       });
       for (const f of input.files ?? []) {
         const rel = normalizeRepoPath(this.root, f);
+        if (!isInsideRepo(rel)) {
+          throw new Error(`file ref escapes repository root: ${f}`);
+        }
         insertRef.run(id, 'file', rel, hashFile(this.root, rel));
       }
       if (ctx.head) insertRef.run(id, 'commit', ctx.head, null);
@@ -253,6 +264,7 @@ export class MemoryStore {
   /** Guardrail primitive: active warn/block memories referencing this file. Stale memories don't fire. */
   check(filePath: string): Memory[] {
     const rel = normalizeRepoPath(this.root, filePath);
+    if (!isInsideRepo(rel)) return [];
     const rows = this.db
       .prepare(
         `SELECT DISTINCT m.* FROM memories m

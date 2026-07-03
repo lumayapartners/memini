@@ -7,6 +7,7 @@ import { MemoryStore } from './store.js';
 import { findRepoRoot } from './git.js';
 import { renderMarkdown } from './render.js';
 import { buildDigest, formatGuardrailWarning } from './digest.js';
+import { redactSecrets } from './redact.js';
 import { Severity } from './types.js';
 import { VERSION } from './version.js';
 
@@ -143,7 +144,10 @@ export async function runMcpServer(cwd: string): Promise<void> {
       mkdirSync(sessionsDir, { recursive: true });
       const slug = summary_title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
       const fname = `${new Date().toISOString().slice(0, 10)}-${slug || 'session'}.md`;
-      writeFileSync(join(sessionsDir, fname), `# ${summary_title}\n\n${body}\n`);
+      // sessions/*.md may be committed — must go through redaction like the DB copy
+      const safeTitle = redactSecrets(summary_title).text;
+      const safeBody = redactSecrets(body).text;
+      writeFileSync(join(sessionsDir, fname), `# ${safeTitle}\n\n${safeBody}\n`);
       renderMarkdown(store);
       return text(`Session summary saved (${m.id}, sessions/${fname}).`);
     }

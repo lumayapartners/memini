@@ -63,6 +63,10 @@ Memory types: `decision`, `failed_attempt`, `fragile_file`, `architecture`, `dep
 - **Local-first.** SQLite + markdown in your repo. No accounts, no cloud, no telemetry. Secrets are auto-redacted from memory bodies before they're stored.
 - **Cross-tool.** Core is a CLI + files; Claude Code hooks and MCP are thin adapters.
 
+## Security
+
+Local-first by design: no server, no account, no telemetry. Secrets are auto-redacted before storage, file references are contained to the repo, and injected memory text is size-capped and framed as data. See [SECURITY.md](./SECURITY.md) for the full threat model — including the honest limitations (guardrails intercept edit tools, not arbitrary shell; `warn` is advisory, `block` is not).
+
 ## Status
 
 Early (v0.1). Team sync — shared memory across your whole team, with a review workflow — is on the roadmap. Feedback and issues welcome.

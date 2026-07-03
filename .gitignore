@@ -4,3 +4,4 @@ dist/
 .DS_Store
 .memini/memory.db
 .memini/memory.db-*
+.memini/hooks/

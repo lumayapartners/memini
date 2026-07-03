@@ -33,6 +33,20 @@ describe('redactSecrets', () => {
     expect(r.text).toContain('[REDACTED:password-assignment]');
   });
 
+  it('redacts npm tokens and URL credentials', () => {
+    const token = ['npm_', 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'].join('');
+    const r = redactSecrets(`published with ${token}, api at https://admin:hunterpass99@api.example.com/v1`);
+    expect(r.text).toContain('[REDACTED:npm-token]');
+    expect(r.text).toContain('[REDACTED:url-credentials]');
+    expect(r.text).not.toContain('hunterpass99');
+  });
+
+  it('redacts unquoted password assignments', () => {
+    const r = redactSecrets('env had PASSWORD=supersecret123 set');
+    expect(r.text).toContain('[REDACTED:password-assignment]');
+    expect(r.text).not.toContain('supersecret123');
+  });
+
   it('leaves normal text alone', () => {
     const input = 'Moved checkout server-side and set VITE_STRIPE_USE_SERVER=true in the dashboard.';
     const r = redactSecrets(input);
