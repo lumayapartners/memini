@@ -31,12 +31,12 @@ function printMemory(m: Memory, verbose = false): void {
 
 program
   .name('pm')
-  .description('projectmemory — project memory and mistake-prevention guardrails for AI coding agents')
+  .description('memini — project memory and mistake-prevention guardrails for AI coding agents')
   .version('0.1.0');
 
 program
   .command('init')
-  .description('Initialize .projectmemory/ in this repo and install agent integrations')
+  .description('Initialize .memini/ in this repo and install agent integrations')
   .option('--no-hooks', 'skip installing Claude Code hooks')
   .action((opts: { hooks: boolean }) => {
     const r = root();
@@ -44,7 +44,7 @@ program
     renderMarkdown(store);
 
     const gitignore = join(r, '.gitignore');
-    const ignoreLines = `\n# projectmemory: DB is local; markdown views are committed\n${PM_DIR}/memory.db\n${PM_DIR}/memory.db-*\n`;
+    const ignoreLines = `\n# memini: DB is local; markdown views are committed\n${PM_DIR}/memory.db\n${PM_DIR}/memory.db-*\n`;
     if (!existsSync(gitignore) || !readFileSync(gitignore, 'utf-8').includes(`${PM_DIR}/memory.db`)) {
       appendFileSync(gitignore, ignoreLines);
     }
@@ -265,7 +265,7 @@ program
       console.log(`Wrote ${p}`);
     } else {
       console.log(JSON.stringify(snippet, null, 2));
-      console.log('\nClaude Code:  claude mcp add projectmemory -- npx -y projectmemory mcp');
+      console.log('\nClaude Code:  claude mcp add memini -- npx -y memini mcp');
       console.log('Cursor:       pm install-mcp --write cursor');
     }
   });

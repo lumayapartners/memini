@@ -17,7 +17,7 @@ export async function runMcpServer(cwd: string): Promise<void> {
   const root = findRepoRoot(cwd);
   const store = new MemoryStore(root);
 
-  const server = new McpServer({ name: 'projectmemory', version: '0.1.0' });
+  const server = new McpServer({ name: 'memini', version: '0.1.0' });
 
   server.tool(
     'recall_project_context',

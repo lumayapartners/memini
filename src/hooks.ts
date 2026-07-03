@@ -114,10 +114,10 @@ interface HookEntry {
 
 const PRE_TOOL_USE: HookEntry = {
   matcher: 'Edit|Write|MultiEdit|NotebookEdit',
-  hooks: [{ type: 'command', command: 'npx -y projectmemory hook claude-pre-tool-use' }],
+  hooks: [{ type: 'command', command: 'npx -y memini hook claude-pre-tool-use' }],
 };
 const SESSION_START: HookEntry = {
-  hooks: [{ type: 'command', command: 'npx -y projectmemory hook claude-session-start' }],
+  hooks: [{ type: 'command', command: 'npx -y memini hook claude-session-start' }],
 };
 
 /** Idempotently install guardrail hooks into <repo>/.claude/settings.json. */
@@ -154,7 +154,7 @@ export function installClaudeHooks(root: string): { path: string; changed: boole
 export function mcpConfigSnippet(): object {
   return {
     mcpServers: {
-      projectmemory: { command: 'npx', args: ['-y', 'projectmemory', 'mcp'] },
+      memini: { command: 'npx', args: ['-y', 'memini', 'mcp'] },
     },
   };
 }

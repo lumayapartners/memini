@@ -14,7 +14,7 @@ import {
 import { redactSecrets } from './redact.js';
 import { gitContext, hashFile, normalizeRepoPath } from './git.js';
 
-export const PM_DIR = '.projectmemory';
+export const PM_DIR = '.memini';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS memories (
