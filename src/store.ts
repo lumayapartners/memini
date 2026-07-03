@@ -179,6 +179,22 @@ export class MemoryStore {
     };
   }
 
+  update(id: string, fields: { title?: string; body?: string; severity?: Severity }): Memory | null {
+    const mem = this.get(id);
+    if (!mem) return null;
+    const title = fields.title !== undefined ? redactSecrets(fields.title).text : mem.title;
+    let body = mem.body;
+    if (fields.body !== undefined) {
+      const raw =
+        fields.body.length > MAX_BODY_CHARS ? fields.body.slice(0, MAX_BODY_CHARS) + ' […truncated]' : fields.body;
+      body = redactSecrets(raw).text;
+    }
+    this.db
+      .prepare(`UPDATE memories SET title = ?, body = ?, severity = ?, updated_at = ? WHERE id = ?`)
+      .run(title, body, fields.severity ?? mem.severity, new Date().toISOString(), mem.id);
+    return this.get(mem.id);
+  }
+
   setStatus(id: string, status: Status): Memory | null {
     const mem = this.get(id);
     if (!mem) return null;

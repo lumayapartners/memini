@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoryStore, PM_DIR } from './store.js';
 import { findRepoRoot } from './git.js';
@@ -165,6 +167,54 @@ program
     }
     printMemory(m, true);
     m.refs.forEach((r) => console.log(`  ref: ${r.refType} ${r.refValue}`));
+    store.close();
+  });
+
+program
+  .command('edit')
+  .description('Edit a memory (opens $EDITOR on the body unless flags are given)')
+  .argument('<id>', 'memory id (prefix ok)')
+  .option('--title <text>', 'new title')
+  .option('--body <text>', 'new body (use "-" to read from stdin)')
+  .option('-s, --severity <level>', `one of: ${SEVERITIES.join(', ')}`)
+  .action((id: string, opts: { title?: string; body?: string; severity?: string }) => {
+    const store = openStore();
+    const mem = store.get(id);
+    if (!mem) {
+      console.error(`No memory found for id ${id}`);
+      process.exit(1);
+    }
+    if (opts.severity && !SEVERITIES.includes(opts.severity as Severity)) {
+      console.error(`Invalid severity "${opts.severity}". Use one of: ${SEVERITIES.join(', ')}`);
+      process.exit(1);
+    }
+    let body = opts.body;
+    if (body === '-') body = readFileSync(0, 'utf-8');
+    if (opts.title === undefined && body === undefined && opts.severity === undefined) {
+      // interactive: open the body in the user's editor
+      const tmp = join(tmpdir(), `memini-edit-${mem.id.slice(0, 8)}.md`);
+      writeFileSync(tmp, mem.body);
+      const editor = process.env.VISUAL || process.env.EDITOR || 'vi';
+      const res = spawnSync(editor, [tmp], { stdio: 'inherit', shell: false });
+      if (res.status !== 0) {
+        console.error(`Editor exited with status ${res.status}; memory unchanged.`);
+        process.exit(1);
+      }
+      body = readFileSync(tmp, 'utf-8');
+      rmSync(tmp, { force: true });
+      if (body === mem.body) {
+        console.log('No changes.');
+        store.close();
+        return;
+      }
+    }
+    const updated = store.update(mem.id, {
+      title: opts.title,
+      body,
+      severity: opts.severity as Severity | undefined,
+    })!;
+    renderMarkdown(store);
+    console.log(`Updated ${updated.id.slice(0, 8)}: ${updated.title}`);
     store.close();
   });
 
