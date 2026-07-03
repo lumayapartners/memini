@@ -4,6 +4,7 @@
   "description": "Never the same mistake twice — mistake-prevention guardrails and persistent project memory for AI coding agents (Claude Code, Cursor, Windsurf).",
   "license": "MIT",
   "type": "module",
+  "author": "Lumaya Partners",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TanmayKnight/projectmemory.git"
