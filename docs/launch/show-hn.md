@@ -1,8 +1,8 @@
 # Show HN post
 
-**Title (80 chars max, no hype words — HN penalizes them):**
+**Title:**
 
-> Show HN: Memini – Stop your AI coding agent from repeating its own mistakes
+> Show HN: Guardrails that stop coding agents from repeating failed fixes
 
 **URL:** https://github.com/lumayapartners/memini
 
@@ -10,43 +10,45 @@
 
 ---
 
-Last month my coding agent broke a Vercel deploy by editing vercel.json. It took an hour to find the real fix (the checkout call had to move server-side). Three days later, on a similar bug, a fresh session of the same agent went straight back to editing vercel.json. Same dead end, same wasted hour. It had no idea it had already tried that.
+I got tired of watching my coding agent make the same mistake twice.
 
-Coding agents are stateless between sessions. CLAUDE.md and the new auto-memory features help with preferences and project facts, but nothing records *what was tried and failed* — and more importantly, nothing puts that history in front of the agent at the moment it's about to repeat it. Memory tools exist (Mem0, Supermemory, claude-mem), but they're libraries the agent may or may not decide to consult. In practice, it doesn't.
+Concrete example from a few weeks ago: a Vercel deploy on a client project started failing. I asked the agent to fix it. It decided the problem was in vercel.json, edited it, and the build broke in a new way. We went in circles for a while before I worked out the actual issue — a Stripe call that had to move server-side. Annoying, but fine. Three days later the same project had a different deploy error. New session, and the first thing the agent did was open vercel.json again.
 
-So we built memini (Latin: "I remember"). Two ideas:
+Everything I tried to fix this had the same weakness. CLAUDE.md is stuff you write ahead of time, and the newer auto-memory features mostly capture preferences and project facts, not "we tried X and it made things worse." The MCP memory servers (OpenMemory, claude-mem, that family) will store whatever you give them, but they depend on the agent deciding to search its memory before doing something risky. Mine basically never did that unprompted.
 
-1. Typed, git-linked memories that live in your repo: failed attempts, fragile files, decisions, deployment rules. Stored in SQLite, rendered to human-readable markdown you can review in a PR. Each memory records the branch/commit it came from and hashes the files it references — when the referenced code changes, the memory is flagged stale and stops firing until re-verified.
-
-2. Enforcement via hooks, not advice via tools. On Claude Code, a PreToolUse hook intercepts the edit *before it happens*:
+So the thing my partner and I built doesn't wait to be asked. It's a PreToolUse hook. When the agent tries to edit a file that has recorded history, the edit is intercepted and the history lands in its context before anything happens:
 
     PROJECT MEMORY GUARDRAIL for `vercel.json`:
     [WARNING] Editing vercel.json broke the build (recorded 2026-06-12)
-    Tried changing buildCommand; deploy failed.
+    Tried changing buildCommand; deploy failed harder.
     Actual fix: move checkout server-side, set VITE_STRIPE_USE_SERVER=true.
 
-   `warn` severity blocks once and allows a considered retry; `block` denies until a human archives the memory. The agent doesn't get to skip the warning, because it never has to remember to ask. The hook path is ~45ms per edit (SQLite lookup, no LLM calls) and fails open — a broken guardrail can never break your agent.
+A "warn" memory blocks the first attempt and lets a retry through — in practice the agent reads the denial reason and changes course. A "block" memory stays blocked until a human archives it. The lookup is a local sqlite query, about 45ms, and the hook fails open on any error so it can't wedge your session.
 
-There's also an MCP server so agents can record what they learn (`remember_failed_attempt`, `remember_fragile_file`, session summaries) — agent-written memories are labeled until a human approves them. Works with Cursor/Windsurf via MCP; enforced hooks are Claude Code-only for now.
+Memories are typed (failed_attempt, fragile_file, decision, deployment rules) and live in a .memini/ folder in the repo. The db is gitignored; rendered markdown is committed, so you can actually read what's accumulating and review it in PRs. Each memory stores the commit it was recorded at and a hash of the files it references. When a referenced file changes later, the memory gets flagged stale and stops firing until someone re-verifies it. That part turned out to matter more than I expected — a confidently wrong old memory is worse than no memory.
 
-Try it (local-first, no account, no telemetry):
+There's also an MCP server so the agent can record its own failures at the end of a session. Agent-written memories get labeled as such and don't count as verified until you approve them.
 
-    cd your-repo
-    npx -y memini init
+Setup is `npx -y memini init` in a repo. Local-first, no account, MIT. Hook enforcement is Claude Code only for now — Cursor and Windsurf get the MCP tools, but I haven't found an equivalent of PreToolUse there yet.
 
-Honest limitations, before you find them: guardrails intercept edit tools, not arbitrary bash (`echo > file` bypasses them — this is a strong nudge with evidence, not a sandbox). Prompt injection via memory bodies is mitigated (data-not-instructions framing, size caps, approval labels) but not eliminated — threat model is in SECURITY.md. And warn-severity is deliberately advisory; block is the hard stop.
+Things it doesn't do, to save you the trouble of finding out: it intercepts the edit tools, not bash, so an agent that echoes into a file goes right around it. And injected memory text is still text in a context window — we cap the size and frame it as data rather than instructions, but prompt injection through memories isn't a solved problem. Notes on both in SECURITY.md.
 
-MIT licensed. The roadmap is team-shared memory — your agent warned by your teammate's agent's failure from yesterday — which is where we think this gets genuinely interesting for agencies running many client repos.
-
-Would love feedback, especially from anyone running agents across multiple repos daily: what does your agent keep forgetting?
+Curious whether other people's agents have this groundhog-day problem or if my projects are just cursed. What does yours keep forgetting?
 
 ---
 
-**First comment (post immediately after submitting, from your account):**
+**First comment (post right after submitting):**
 
-Author here. A few technical notes that didn't fit the post:
+Author here. Some details that didn't fit above.
 
-- Why hooks instead of MCP tools: we tested tool-based recall first. Agents call `recall_project_context` maybe 20% of the time unprompted. The PreToolUse hook makes recall structurally guaranteed on the risky path (file edits), which is the only place it really matters.
-- Warn-once semantics: first edit attempt on a flagged file is denied with the recorded history injected; an immediate retry proceeds. This maps well to how agents actually behave — they read the denial reason, reconsider, and either change approach or proceed deliberately.
-- Staleness: memories hash referenced files at write time. `pm stale` flags memories whose evidence changed; stale memories stop firing guardrails but still appear in recall marked "possibly outdated". This was the fix for the "old memories poison the context" problem every memory tool hits.
-- The DB is gitignored; only rendered markdown is committed (one-way render, never parsed back). That's deliberate: it keeps the attack surface of "teammate commits malicious memory" closed until we build the reviewed team-sync flow.
+We tried the polite version first — an MCP tool called recall_project_context the agent was supposed to call before starting work. Watching the logs over a couple of weeks of real use, it called it occasionally when the task description sounded scary, and skipped it the rest of the time. The hook approach came out of that frustration: the only reliable place to put memory is in the path of the action itself, not behind a tool the model has to think to use.
+
+The warn-once thing also came from testing rather than design. Originally warnings blocked every attempt, which made the agent treat the guardrail as an obstacle and try to work around it (one memorable session it decided to write a new config file instead). Deny once with the reason, allow the retry — it reads the history, and either changes approach or proceeds having actually considered it. That's the behavior we wanted anyway.
+
+The db-gitignored / markdown-committed split is deliberate: markdown renders are one-way, never parsed back, so a teammate can't inject memories into your agent by committing a doctored file. Shared team memory is the thing we want to build next, but it needs a review step before someone else's memory can fire guardrails on your machine.
+
+**Style notes for whoever posts this (do not include):**
+
+- Post Tue–Thu, 8–10am ET. Reply to every substantive comment in the first 3 hours with specifics, not thanks.
+- If asked for benchmarks/numbers we don't have, say we don't have them yet. Nothing kills a Show HN faster than a caught embellishment.
+- Replace the vercel.json story details with whatever actually happened in your dogfooding if it differs — every claim in the post should be personally defensible.
