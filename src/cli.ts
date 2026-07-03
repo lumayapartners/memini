@@ -4,10 +4,11 @@ import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MemoryStore, PM_DIR } from './store.js';
+import { MemoryStore, PM_DIR, Scope } from './store.js';
 import { findRepoRoot } from './git.js';
 import { renderMarkdown } from './render.js';
-import { buildDigest } from './digest.js';
+import { buildScopedDigest } from './digest.js';
+import { checkAllScopes, openScopedStores, openStoreForScope, resolveScopes } from './scopes.js';
 import { installClaudeHooks, mcpConfigSnippet, runPreToolUseHook, runSessionStartHook } from './hooks.js';
 import { Memory, MEMORY_TYPES, MemoryType, SEVERITIES, Severity } from './types.js';
 import { VERSION } from './version.js';
@@ -24,12 +25,23 @@ function openStore(): MemoryStore {
   return new MemoryStore(r);
 }
 
-function printMemory(m: Memory, verbose = false): void {
+function printMemory(m: Memory, verbose = false, scope?: Scope): void {
   const files = m.refs.filter((r) => r.refType === 'file').map((r) => r.refValue);
   const sev = m.severity !== 'info' ? ` [${m.severity.toUpperCase()}]` : '';
-  console.log(`${m.id.slice(0, 8)}  ${m.type.padEnd(17)}${sev} ${m.title}${m.status !== 'active' ? ` (${m.status})` : ''}`);
+  const scopeTag = scope && scope !== 'project' ? ` [${scope}]` : '';
+  console.log(`${m.id.slice(0, 8)}  ${m.type.padEnd(17)}${sev}${scopeTag} ${m.title}${m.status !== 'active' ? ` (${m.status})` : ''}`);
   if (files.length) console.log(`          files: ${files.join(', ')}`);
   if (verbose) console.log(`\n${m.body}\n`);
+}
+
+const SCOPES: Scope[] = ['project', 'workspace', 'user'];
+function parseScope(s: string | undefined): Scope {
+  const scope = (s ?? 'project') as Scope;
+  if (!SCOPES.includes(scope)) {
+    console.error(`Invalid scope "${s}". Use one of: ${SCOPES.join(', ')}`);
+    process.exit(1);
+  }
+  return scope;
 }
 
 program
@@ -41,10 +53,23 @@ program
   .command('init')
   .description('Initialize .memini/ in this repo and install agent integrations')
   .option('--no-hooks', 'skip installing Claude Code hooks')
-  .action((opts: { hooks: boolean }) => {
+  .option('--workspace', 'create a workspace store HERE covering all repos in subdirectories (run in the parent folder, not a repo)')
+  .action((opts: { hooks: boolean; workspace?: boolean }) => {
+    if (opts.workspace) {
+      const wsRoot = process.cwd();
+      const store = new MemoryStore(wsRoot, { scope: 'workspace' });
+      renderMarkdown(store);
+      store.close();
+      console.log(`Initialized workspace memory in ${wsRoot}/${PM_DIR}/`);
+      console.log('It applies to every repo under this directory. Record shared rules with:');
+      console.log('  pm remember deployment "…" --scope workspace   (from inside any repo below)');
+      return;
+    }
     const r = root();
     const store = new MemoryStore(r);
     renderMarkdown(store);
+    const ws = resolveScopes(r).find((s) => s.scope === 'workspace');
+    if (ws) console.log(`Workspace memory detected at ${ws.root}/${PM_DIR}/ — its verified rules apply here.`);
 
     const gitignore = join(r, '.gitignore');
     const ignoreLines = `\n# memini: DB and hook shim are local; markdown views are committed\n${PM_DIR}/memory.db\n${PM_DIR}/memory.db-*\n${PM_DIR}/hooks/\n`;
@@ -69,9 +94,10 @@ program
   .argument('<type>', `one of: ${MEMORY_TYPES.join(', ')}`)
   .argument('<title>', 'one-line summary')
   .option('-b, --body <text>', 'details (markdown). Use "-" to read from stdin')
-  .option('-f, --file <path...>', 'file(s) this memory is linked to (enables guardrails)')
+  .option('-f, --file <path...>', 'file(s) this memory is linked to (enables guardrails); glob patterns for workspace/user scope')
   .option('-s, --severity <level>', `one of: ${SEVERITIES.join(', ')}`, 'info')
-  .action((type: string, title: string, opts: { body?: string; file?: string[]; severity: string }) => {
+  .option('--scope <scope>', `where to record it: ${SCOPES.join(', ')} (workspace/user apply across repos)`, 'project')
+  .action((type: string, title: string, opts: { body?: string; file?: string[]; severity: string; scope?: string }) => {
     if (!MEMORY_TYPES.includes(type as MemoryType)) {
       console.error(`Invalid type "${type}". Use one of: ${MEMORY_TYPES.join(', ')}`);
       process.exit(1);
@@ -80,9 +106,16 @@ program
       console.error(`Invalid severity "${opts.severity}". Use one of: ${SEVERITIES.join(', ')}`);
       process.exit(1);
     }
+    const scope = parseScope(opts.scope);
     let body = opts.body ?? title;
     if (body === '-') body = readFileSync(0, 'utf-8');
-    const store = openStore();
+    let store: MemoryStore;
+    try {
+      store = scope === 'project' ? openStore() : openStoreForScope(process.cwd(), scope);
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : String(e));
+      process.exit(1);
+    }
     const m = store.add({
       type: type as MemoryType,
       title,
@@ -92,11 +125,61 @@ program
       confidence: 'human_verified',
     });
     renderMarkdown(store);
-    console.log(`Recorded ${m.type} ${m.id.slice(0, 8)}: ${m.title}`);
+    console.log(`Recorded ${m.type} ${m.id.slice(0, 8)} [${scope}]: ${m.title}`);
     if (m.severity !== 'info' && (opts.file?.length ?? 0) > 0) {
-      console.log(`Guardrail active: agents will be ${m.severity === 'block' ? 'blocked' : 'warned'} before editing ${opts.file!.join(', ')}`);
+      const where = scope === 'project' ? '' : ' (in every repo under this scope)';
+      console.log(`Guardrail active: agents will be ${m.severity === 'block' ? 'blocked' : 'warned'} before editing ${opts.file!.join(', ')}${where}`);
     }
     store.close();
+  });
+
+program
+  .command('promote')
+  .description('Lift a project memory to a wider scope (it becomes human-verified and applies across repos)')
+  .argument('<id>', 'project memory id (prefix ok)')
+  .option('--workspace', 'promote to the workspace scope (nearest ancestor .memini)')
+  .option('--user', 'promote to your user scope (~/.memini)')
+  .action((id: string, opts: { workspace?: boolean; user?: boolean }) => {
+    if (!opts.workspace === !opts.user) {
+      console.error('Pick exactly one target: --workspace or --user');
+      process.exit(1);
+    }
+    const scope: Scope = opts.workspace ? 'workspace' : 'user';
+    const src = openStore();
+    const m = src.get(id);
+    if (!m) {
+      console.error(`No memory found for id ${id}`);
+      process.exit(1);
+    }
+    let dst: MemoryStore;
+    try {
+      dst = openStoreForScope(process.cwd(), scope);
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : String(e));
+      process.exit(1);
+    }
+    // file refs become patterns: keep basenames so they match in any repo layout
+    const patterns = m.refs
+      .filter((r) => r.refType === 'file')
+      .map((r) => r.refValue.split('/').pop()!)
+      .filter((v, i, a) => a.indexOf(v) === i);
+    const promoted = dst.add({
+      type: m.type,
+      title: m.title,
+      body: m.body,
+      files: patterns,
+      severity: m.severity,
+      confidence: 'human_verified',
+      createdBy: m.createdBy,
+    });
+    renderMarkdown(dst);
+    src.setStatus(m.id, 'archived');
+    renderMarkdown(src);
+    console.log(`Promoted to ${scope}: ${promoted.id.slice(0, 8)} ${promoted.title}`);
+    if (patterns.length) console.log(`File guardrails now match by pattern: ${patterns.join(', ')}`);
+    console.log(`Original project memory ${m.id.slice(0, 8)} archived.`);
+    src.close();
+    dst.close();
   });
 
 program
@@ -108,16 +191,24 @@ program
   .option('--digest', 'print the token-budgeted digest agents receive')
   .option('--json', 'JSON output')
   .action((query: string | undefined, opts: { type?: string; file?: string; digest?: boolean; json?: boolean }) => {
-    const store = openStore();
-    if (opts.digest) {
-      console.log(buildDigest(store, { query }) || 'No memories yet.');
-    } else {
-      const results = store.recall({ query, type: opts.type as MemoryType | undefined, file: opts.file, includeStale: true });
-      if (opts.json) console.log(JSON.stringify(results, null, 2));
-      else if (results.length === 0) console.log('No matching memories.');
-      else results.forEach((m) => printMemory(m));
+    const stores = openScopedStores(process.cwd());
+    if (stores.length === 0) {
+      console.error(`No ${PM_DIR}/ found. Run \`pm init\` first.`);
+      process.exit(1);
     }
-    store.close();
+    if (opts.digest) {
+      console.log(buildScopedDigest(stores, { query }) || 'No memories yet.');
+    } else {
+      const results = stores.flatMap(({ store, scope }) => {
+        let found = store.recall({ query, type: opts.type as MemoryType | undefined, file: scope === 'project' ? opts.file : undefined, includeStale: true });
+        if (scope !== 'project') found = found.filter((m) => m.confidence === 'human_verified');
+        return found.map((m) => ({ m, scope }));
+      });
+      if (opts.json) console.log(JSON.stringify(results.map(({ m, scope }) => ({ ...m, scope })), null, 2));
+      else if (results.length === 0) console.log('No matching memories.');
+      else results.forEach(({ m, scope }) => printMemory(m, false, scope));
+    }
+    stores.forEach(({ store }) => store.close());
   });
 
 program
@@ -126,17 +217,16 @@ program
   .argument('<path>', 'file to check')
   .option('--json', 'JSON output')
   .action((path: string, opts: { json?: boolean }) => {
-    const store = openStore();
-    const hits = store.check(path);
-    if (opts.json) console.log(JSON.stringify(hits, null, 2));
+    const hits = checkAllScopes(process.cwd(), path);
+    if (opts.json) console.log(JSON.stringify(hits.map(({ memory, scope }) => ({ ...memory, scope })), null, 2));
     else if (hits.length === 0) console.log(`No recorded risks for ${path}.`);
     else {
-      for (const m of hits) {
-        console.error(`[${m.severity.toUpperCase()}] ${m.title} (${m.id.slice(0, 8)}, ${m.createdAt.slice(0, 10)})`);
+      for (const { memory: m, scope } of hits) {
+        const tag = scope !== 'project' ? ` [${scope}]` : '';
+        console.error(`[${m.severity.toUpperCase()}]${tag} ${m.title} (${m.id.slice(0, 8)}, ${m.createdAt.slice(0, 10)})`);
         console.error(m.body.trim() + '\n');
       }
     }
-    store.close();
     process.exit(hits.length > 0 ? 1 : 0);
   });
 
@@ -347,10 +437,15 @@ program
     for (const [name, ok, fix] of checks) {
       console.log(`${ok ? '✓' : '✗'} ${name}${ok ? '' : `  → ${fix}`}`);
     }
-    if (MemoryStore.exists(r)) {
-      const store = new MemoryStore(r);
+    console.log('\nScopes:');
+    for (const s of resolveScopes(r)) {
+      if (!s.exists) {
+        console.log(`  ${s.scope.padEnd(9)} — none${s.scope === 'workspace' ? ' (create with `pm init --workspace` in a parent dir)' : ''}`);
+        continue;
+      }
+      const store = new MemoryStore(s.root, { scope: s.scope });
       const active = store.list().filter((m) => m.status === 'active').length;
-      console.log(`\n${active} active memories.`);
+      console.log(`  ${s.scope.padEnd(9)} ${s.root}/${PM_DIR} — ${active} active memories`);
       store.close();
     }
   });

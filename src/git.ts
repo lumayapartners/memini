@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 function git(cwd: string, args: string[]): string | null {
@@ -31,10 +31,19 @@ export function findRepoRoot(cwd: string): string {
   return git(cwd, ['rev-parse', '--show-toplevel']) ?? resolve(cwd);
 }
 
+/** Resolve symlinks when possible so paths compare consistently (e.g. macOS /var → /private/var). */
+function realpathSafe(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
 /** Normalize a path to repo-root-relative with forward slashes, so refs match across machines and tools. */
 export function normalizeRepoPath(root: string, filePath: string): string {
-  const abs = isAbsolute(filePath) ? filePath : join(root, filePath);
-  return relative(root, abs).split(sep).join('/');
+  const abs = isAbsolute(filePath) ? filePath : join(realpathSafe(root), filePath);
+  return relative(realpathSafe(root), realpathSafe(abs)).split(sep).join('/');
 }
 
 /** True when a normalized repo path stays inside the repo root. */

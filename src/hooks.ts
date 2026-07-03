@@ -3,7 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MemoryStore } from './store.js';
 import { findRepoRoot } from './git.js';
-import { buildDigest, formatGuardrailWarning } from './digest.js';
+import { buildScopedDigest, formatGuardrailWarning } from './digest.js';
+import { checkAllScopes, openScopedStores } from './scopes.js';
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
@@ -34,23 +35,25 @@ export async function runPreToolUseHook(): Promise<void> {
     const filePath = input.tool_input?.file_path ?? input.tool_input?.notebook_path;
     if (!filePath) return allow();
 
-    const root = findRepoRoot(input.cwd ?? process.cwd());
+    const cwd = input.cwd ?? process.cwd();
+    const root = findRepoRoot(cwd);
+    const hits = checkAllScopes(cwd, filePath);
+    if (hits.length === 0) return allow();
+
+    const blocks = hits.filter((h) => h.memory.severity === 'block');
+    const warning = formatGuardrailWarning(filePath, hits);
+
+    if (blocks.length > 0) {
+      return deny(
+        `${warning}\n\nThis file is protected by a BLOCK-severity project memory. Do not edit it. ` +
+          `If the user explicitly confirms the edit should proceed, they can archive the memory with: pm archive ${blocks[0].memory.id}`
+      );
+    }
+
+    // warn-once tracking lives in the project store regardless of memory scope
     if (!MemoryStore.exists(root)) return allow();
     const store = new MemoryStore(root);
     try {
-      const hits = store.check(filePath);
-      if (hits.length === 0) return allow();
-
-      const blocks = hits.filter((m) => m.severity === 'block');
-      const warning = formatGuardrailWarning(filePath, hits);
-
-      if (blocks.length > 0) {
-        return deny(
-          `${warning}\n\nThis file is protected by a BLOCK-severity project memory. Do not edit it. ` +
-            `If the user explicitly confirms the edit should proceed, they can archive the memory with: pm archive ${blocks[0].id}`
-        );
-      }
-
       const sessionId = input.session_id ?? 'unknown-session';
       if (store.hasWarned(sessionId, filePath)) return allow();
       store.markWarned(sessionId, filePath);
@@ -69,15 +72,14 @@ export async function runPreToolUseHook(): Promise<void> {
   }
 }
 
-/** Claude Code SessionStart hook: inject the project-memory digest as context. */
+/** Claude Code SessionStart hook: inject the memory digest (all scopes) as context. */
 export async function runSessionStartHook(): Promise<void> {
   try {
     const input = JSON.parse(await readStdin()) as ClaudeHookInput;
-    const root = findRepoRoot(input.cwd ?? process.cwd());
-    if (!MemoryStore.exists(root)) return;
-    const store = new MemoryStore(root);
+    const stores = openScopedStores(input.cwd ?? process.cwd());
+    if (stores.length === 0) return;
     try {
-      const digest = buildDigest(store);
+      const digest = buildScopedDigest(stores);
       if (!digest) return;
       process.stdout.write(
         JSON.stringify({
@@ -85,7 +87,7 @@ export async function runSessionStartHook(): Promise<void> {
         })
       );
     } finally {
-      store.close();
+      stores.forEach(({ store }) => store.close());
     }
   } catch {
     /* fail open */

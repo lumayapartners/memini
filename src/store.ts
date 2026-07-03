@@ -13,6 +13,7 @@ import {
 } from './types.js';
 import { redactSecrets } from './redact.js';
 import { gitContext, hashFile, isInsideRepo, normalizeRepoPath } from './git.js';
+import { globMatch } from './glob.js';
 
 export const PM_DIR = '.memini';
 /** Bodies beyond this are truncated at write time (context-stuffing defense). */
@@ -77,13 +78,19 @@ interface MemoryRow {
   source_session: string | null;
 }
 
+export type Scope = 'project' | 'workspace' | 'user';
+
 export class MemoryStore {
   readonly db: Database.Database;
   readonly root: string;
   readonly dir: string;
+  /** project: file refs are normalized repo paths with content hashes.
+   *  workspace/user: file refs are verbatim glob patterns, unhashed. */
+  readonly scope: Scope;
 
-  constructor(root: string) {
+  constructor(root: string, opts: { scope?: Scope } = {}) {
     this.root = root;
+    this.scope = opts.scope ?? 'project';
     this.dir = join(root, PM_DIR);
     if (!existsSync(this.dir)) mkdirSync(this.dir, { recursive: true });
     this.db = new Database(join(this.dir, 'memory.db'));
@@ -134,14 +141,21 @@ export class MemoryStore {
         sourceSession: input.sourceSession ?? null,
       });
       for (const f of input.files ?? []) {
-        const rel = normalizeRepoPath(this.root, f);
-        if (!isInsideRepo(rel)) {
-          throw new Error(`file ref escapes repository root: ${f}`);
+        if (this.scope === 'project') {
+          const rel = normalizeRepoPath(this.root, f);
+          if (!isInsideRepo(rel)) {
+            throw new Error(`file ref escapes repository root: ${f}`);
+          }
+          insertRef.run(id, 'file', rel, hashFile(this.root, rel));
+        } else {
+          // wider scopes store verbatim glob patterns; no hashing (layouts differ per repo)
+          insertRef.run(id, 'file', f, null);
         }
-        insertRef.run(id, 'file', rel, hashFile(this.root, rel));
       }
-      if (ctx.head) insertRef.run(id, 'commit', ctx.head, null);
-      if (ctx.branch && ctx.branch !== 'HEAD') insertRef.run(id, 'branch', ctx.branch, null);
+      if (this.scope === 'project') {
+        if (ctx.head) insertRef.run(id, 'commit', ctx.head, null);
+        if (ctx.branch && ctx.branch !== 'HEAD') insertRef.run(id, 'branch', ctx.branch, null);
+      }
     })();
 
     return this.get(id)!;
@@ -291,6 +305,29 @@ export class MemoryStore {
       )
       .all(rel) as MemoryRow[];
     return rows.map((r) => this.hydrate(r));
+  }
+
+  /**
+   * Guardrail check for wider scopes: refs are glob patterns matched against a
+   * repo-relative path. Only human-verified memories fire outside project scope
+   * (an agent-poisoned workspace memory would inject into every repo).
+   */
+  checkPattern(repoRelPath: string): Memory[] {
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT m.* FROM memories m
+         JOIN memory_refs r ON r.memory_id = m.id
+         WHERE r.ref_type = 'file'
+           AND m.status = 'active' AND m.severity IN ('warn','block')
+           AND m.confidence = 'human_verified'
+         ORDER BY CASE m.severity WHEN 'block' THEN 0 ELSE 1 END, m.created_at DESC`
+      )
+      .all() as MemoryRow[];
+    return rows
+      .map((r) => this.hydrate(r))
+      .filter((m) =>
+        m.refs.some((ref) => ref.refType === 'file' && globMatch(ref.refValue, repoRelPath))
+      );
   }
 
   /** Re-hash referenced files; mark memories stale when referenced content changed or disappeared. */

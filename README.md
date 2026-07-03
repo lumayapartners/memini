@@ -55,6 +55,28 @@ npx -y memini install-mcp                           # print generic config
 
 Memory types: `decision`, `failed_attempt`, `fragile_file`, `architecture`, `deployment`, `client_preference`, `session_summary`.
 
+## Scopes: sharing rules across repos
+
+Some lessons are project-specific; some apply to every repo on your machine that belongs to the same org or client. memini has three scopes:
+
+| Scope | Where it lives | Use it for |
+|---|---|---|
+| `project` (default) | `<repo>/.memini/` | this repo's failed fixes, fragile files, decisions |
+| `workspace` | `.memini/` in a parent folder of your repos | org/client conventions shared by every repo under that folder |
+| `user` | `~/.memini/` | personal rules that follow you everywhere |
+
+```bash
+cd ~/work/acme && pm init --workspace     # one-time: workspace store covering ~/work/acme/*
+
+# from inside any repo under ~/work/acme:
+pm remember deployment "DB connections must use org OAuth, never PATs" \
+  --file "databricks.yml" --severity warn --scope workspace
+
+pm promote <id> --workspace               # lift a project lesson that turned out to be org-wide
+```
+
+Every repo under the workspace folder — including ones you create later — gets those guardrails automatically. Resolution walks up the directory tree, like `.gitconfig` or ESLint configs. Workspace/user file guardrails match by glob (`vercel.json` matches any repo's vercel.json; `config/**/*.yml` works too), and wider-scope memories only fire when human-verified — agents can propose memories to project scope only, so a prompt-injected agent can't plant rules that spread across repos. `pm doctor` shows which scopes are active.
+
 ## Design principles
 
 - **Enforced, not advisory.** MCP memory tools are optional for the agent; hooks are not. The guardrail path works even if the agent never thinks to check its memory.
