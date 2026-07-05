@@ -27,6 +27,35 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION" >&2
             exit 1
           fi
+          echo "PKG_VERSION=$PKG_VERSION" >> "$GITHUB_ENV"
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # --- publish to the official MCP registry (registry.modelcontextprotocol.io) ---
+      - name: Wait for npm propagation
+        run: |
+          for i in $(seq 1 20); do
+            if [ "$(npm view "memini@$PKG_VERSION" mcpName 2>/dev/null)" = "io.github.lumayapartners/memini" ]; then
+              exit 0
+            fi
+            echo "waiting for memini@$PKG_VERSION with mcpName on npm ($i/20)…"
+            sleep 15
+          done
+          echo "package with mcpName not visible on npm after 5 minutes" >&2
+          exit 1
+      - name: Sync server.json version
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = require('./package.json');
+            const s = JSON.parse(fs.readFileSync('server.json', 'utf8'));
+            s.version = pkg.version;
+            s.packages[0].version = pkg.version;
+            fs.writeFileSync('server.json', JSON.stringify(s, null, 2) + '\n');
+          "
+      - name: Publish to MCP registry
+        run: |
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

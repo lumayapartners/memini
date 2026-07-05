@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.lumayapartners/memini",
+  "description": "Local-first project memory and mistake-prevention guardrails for AI coding agents.",
+  "repository": {
+    "url": "https://github.com/lumayapartners/memini",
+    "source": "github"
+  },
+  "version": "0.2.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "memini",
+      "version": "0.2.1",
+      "runtimeHint": "npx",
+      "runtimeArguments": [{ "type": "positional", "value": "-y" }],
+      "packageArguments": [{ "type": "positional", "value": "mcp" }],
+      "transport": { "type": "stdio" }
+    }
+  ]
+}
