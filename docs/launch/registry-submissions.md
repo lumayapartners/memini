@@ -40,10 +40,11 @@ URL: https://github.com/hesreallyhim/awesome-claude-code/issues/new?template=rec
 - **Description:** Project memory with enforcement: a PreToolUse hook warns or blocks the agent before it edits files with recorded failed fixes, and a session-start hook injects per-repo decisions, deployment rules, and fragile-file history.
 - Tick all three checkboxes (not a duplicate / link works / Claude Code-specific — the hooks are Claude Code-specific, so this is accurate).
 
-## 5. awesome-mcp-servers (punkpeye) — 🖱️ BRANCH READY, PR NOT YET OPENED
+## 5. awesome-mcp-servers (punkpeye) — ✅ PR #9349 OPEN, all bot checks green (2026-07-05)
 
-One click: https://github.com/TanmayKnight/awesome-mcp-servers/pull/new/add-memini
-(branch `add-memini` on the fork already contains the edit below; just paste title + body)
+https://github.com/punkpeye/awesome-mcp-servers/pull/9349 — labels valid-name / has-emoji /
+has-glama all set (Glama listing: https://glama.ai/mcp/servers/lumayapartners/memini, enabled
+by the Dockerfile added to the repo). Awaiting maintainer merge; no action needed.
 
 Section: `### 🧠 Knowledge & Memory`, alphabetical order. Entry line:
 
