@@ -14,7 +14,7 @@ registry.modelcontextprotocol.io. First run: tag v0.2.1.
 PulseMCP ingests the official registry daily and processes weekly. memini appears ~a week after
 v0.2.1 is in the official registry. If the listing needs corrections later: hello@pulsemcp.com.
 
-## 3. mcpservers.org — web form, ~2 minutes
+## 3. mcpservers.org — ✅ SUBMITTED 2026-07-05 (review within ~12h, email confirmation follows)
 
 URL: https://mcpservers.org/submit (free tier; ignore the $39 premium)
 
@@ -24,7 +24,11 @@ URL: https://mcpservers.org/submit (free tier; ignore the $39 premium)
 - **Category:** Memory
 - **Contact Email:** admin@lumayapartners.com
 
-## 4. awesome-claude-code — GitHub issue form, ~3 minutes (must be submitted by a human, PRs prohibited)
+## 4. awesome-claude-code — ⏸️ BLOCKED 2026-07-05, RETRY in a few days
+
+Attempted 2026-07-05: repo has GitHub interaction limits enabled (issue creation restricted to
+collaborators — a temporary anti-spam setting). Retry the same form when it lifts.
+GitHub issue form, ~3 minutes (must be submitted by a human, PRs prohibited)
 
 URL: https://github.com/hesreallyhim/awesome-claude-code/issues/new?template=recommend-resource.yml
 
@@ -36,7 +40,10 @@ URL: https://github.com/hesreallyhim/awesome-claude-code/issues/new?template=rec
 - **Description:** Project memory with enforcement: a PreToolUse hook warns or blocks the agent before it edits files with recorded failed fixes, and a session-start hook injects per-repo decisions, deployment rules, and fragile-file history.
 - Tick all three checkboxes (not a duplicate / link works / Claude Code-specific — the hooks are Claude Code-specific, so this is accurate).
 
-## 5. awesome-mcp-servers (punkpeye) — GitHub PR
+## 5. awesome-mcp-servers (punkpeye) — 🖱️ BRANCH READY, PR NOT YET OPENED
+
+One click: https://github.com/TanmayKnight/awesome-mcp-servers/pull/new/add-memini
+(branch `add-memini` on the fork already contains the edit below; just paste title + body)
 
 Section: `### 🧠 Knowledge & Memory`, alphabetical order. Entry line:
 
