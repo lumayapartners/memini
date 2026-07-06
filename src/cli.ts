@@ -12,6 +12,7 @@ import { checkAllScopes, openScopedStores, openStoreForScope, resolveScopes } fr
 import {
   cursorRule,
   installClaudeHooks,
+  installCursorHooks,
   installGitHook,
   mcpConfigSnippet,
   runPreToolUseHook,
@@ -420,13 +421,16 @@ program
       const existing = existsSync(p) ? JSON.parse(readFileSync(p, 'utf-8')) : {};
       existing.mcpServers = { ...(existing.mcpServers ?? {}), ...(snippet as { mcpServers: object }).mcpServers };
       writeFileSync(p, JSON.stringify(existing, null, 2) + '\n');
-      // also install the always-applied rule that steers the agent to the guardrail tools
+      // always-applied rule that steers the agent to the guardrail tools (advisory)
       const rulePath = join(r, '.cursor', 'rules', 'memini.mdc');
       mkdirSync(dirname(rulePath), { recursive: true });
       writeFileSync(rulePath, cursorRule());
+      // enforced preToolUse hooks: block edits to guardrailed files (Cursor 1.7+)
+      const { path: hooksPath } = installCursorHooks(r);
       console.log(`Wrote ${p}`);
       console.log(`Wrote ${rulePath}`);
-      console.log('Restart Cursor (or reload the window) so it picks up the MCP server and rule.');
+      console.log(`Wrote ${hooksPath}  (enforced preToolUse guardrail)`);
+      console.log('Restart Cursor (or reload the window) so it picks up the MCP server, rule, and hooks.');
     } else {
       console.log(JSON.stringify(snippet, null, 2));
       console.log('\nClaude Code:  claude mcp add memini -- npx -y memini mcp');
@@ -502,8 +506,10 @@ program
     const gitOk = existsSync(gitHookPath) && readFileSync(gitHookPath, 'utf-8').includes('memini precommit');
     checks.push(['git pre-commit guardrail', gitOk, `run \`pm install-hooks --git\``]);
     const cursorOk =
-      existsSync(join(r, '.cursor', 'mcp.json')) && existsSync(join(r, '.cursor', 'rules', 'memini.mdc'));
-    checks.push(['cursor mcp + rule', cursorOk, `run \`pm install-mcp --write cursor\` (optional)`]);
+      existsSync(join(r, '.cursor', 'mcp.json')) &&
+      existsSync(join(r, '.cursor', 'rules', 'memini.mdc')) &&
+      existsSync(join(r, '.cursor', 'hooks.json'));
+    checks.push(['cursor mcp + rule + hooks', cursorOk, `run \`pm install-mcp --write cursor\` (optional)`]);
     for (const [name, ok, fix] of checks) {
       console.log(`${ok ? '✓' : '✗'} ${name}${ok ? '' : `  → ${fix}`}`);
     }

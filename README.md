@@ -48,17 +48,18 @@ npx -y memini install-mcp                    # print generic MCP config
 
 **Enforcement is a chain of gates, and memini covers several:**
 
-- **Before the edit** (Claude Code) — a PreToolUse hook blocks the edit before it happens.
-- **Before the commit** (every tool) — a git pre-commit guardrail blocks a commit that
-  touches a `block`-severity file, no matter which IDE or agent made the edit. Installed by
-  `pm init` (or `pm install-hooks --git`). Fails open; overridable with `git commit --no-verify`.
-- **Advisory** (Cursor, Windsurf, any MCP client) — the `check_before_editing` /
-  `recall_project_context` tools plus an always-applied Cursor rule steering the agent to use
-  them. Works when the agent follows the rule.
+- **Before the edit — Claude Code** (PreToolUse hook) and **Cursor** (`preToolUse` hook,
+  Cursor 1.7+): the edit to a guardrailed file is blocked before it happens. `block` → denied,
+  `warn` → the user is prompted with the recorded history.
+- **Before the commit — every tool** — a git pre-commit guardrail blocks a commit that touches
+  a `block`-severity file, no matter which IDE or agent made the edit (VS Code Copilot, Windsurf,
+  Cline, a human…). Installed by `pm init` (or `pm install-hooks --git`). Fails open; overridable
+  with `git commit --no-verify`.
+- **Advisory — any MCP client** — the `check_before_editing` / `recall_project_context` tools,
+  plus an always-applied Cursor rule steering the agent to use them.
 
-So on Cursor/VS Code today you get advisory guidance *plus* enforced blocking at commit time.
-Native pre-edit hooks for those IDEs are on the roadmap (Cursor and GitHub Copilot now expose
-their own PreToolUse hooks).
+`pm install-mcp --write cursor` sets up all three for Cursor (MCP tools, rule, and the enforced
+hook). GitHub Copilot's hook adapter is next on the roadmap.
 
 ## CLI
 
