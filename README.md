@@ -10,6 +10,8 @@ AI coding agents are stateless: every session starts with amnesia. The agent tha
 
 Not a notebook the agent may choose to read. A guardrail it can't skip.
 
+![memini demo — an agent is stopped before repeating a recorded deploy mistake](docs/assets/demo.gif)
+
 ## How it works
 
 1. **Memories live in your repo** — a `.memini/` folder with a local SQLite index and human-readable, PR-reviewable markdown views. Local-first: nothing leaves your machine.
