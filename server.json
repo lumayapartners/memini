@@ -6,16 +6,28 @@
     "url": "https://github.com/lumayapartners/memini",
     "source": "github"
   },
-  "version": "0.2.1",
+  "version": "0.2.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "memini",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "runtimeHint": "npx",
-      "runtimeArguments": [{ "type": "positional", "value": "-y" }],
-      "packageArguments": [{ "type": "positional", "value": "mcp" }],
-      "transport": { "type": "stdio" }
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "-y"
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
     }
   ]
 }

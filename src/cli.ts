@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { MemoryStore, PM_DIR, Scope } from './store.js';
 import { findRepoRoot } from './git.js';
 import { renderMarkdown } from './render.js';
 import { buildScopedDigest } from './digest.js';
 import { checkAllScopes, openScopedStores, openStoreForScope, resolveScopes } from './scopes.js';
-import { installClaudeHooks, mcpConfigSnippet, runPreToolUseHook, runSessionStartHook } from './hooks.js';
+import { cursorRule, installClaudeHooks, mcpConfigSnippet, runPreToolUseHook, runSessionStartHook } from './hooks.js';
 import { Memory, MEMORY_TYPES, MemoryType, SEVERITIES, Severity } from './types.js';
 import { VERSION } from './version.js';
 
@@ -394,16 +394,19 @@ program
   .action((opts: { write?: string }) => {
     const snippet = mcpConfigSnippet();
     if (opts.write === 'cursor') {
-      const p = join(root(), '.cursor', 'mcp.json');
-      const dir = join(root(), '.cursor');
-      if (!existsSync(dir)) {
-        writeFileSync(p, JSON.stringify(snippet, null, 2) + '\n');
-      } else {
-        const existing = existsSync(p) ? JSON.parse(readFileSync(p, 'utf-8')) : {};
-        existing.mcpServers = { ...(existing.mcpServers ?? {}), ...(snippet as any).mcpServers };
-        writeFileSync(p, JSON.stringify(existing, null, 2) + '\n');
-      }
+      const r = root();
+      const p = join(r, '.cursor', 'mcp.json');
+      mkdirSync(join(r, '.cursor'), { recursive: true });
+      const existing = existsSync(p) ? JSON.parse(readFileSync(p, 'utf-8')) : {};
+      existing.mcpServers = { ...(existing.mcpServers ?? {}), ...(snippet as { mcpServers: object }).mcpServers };
+      writeFileSync(p, JSON.stringify(existing, null, 2) + '\n');
+      // also install the always-applied rule that steers the agent to the guardrail tools
+      const rulePath = join(r, '.cursor', 'rules', 'memini.mdc');
+      mkdirSync(dirname(rulePath), { recursive: true });
+      writeFileSync(rulePath, cursorRule());
       console.log(`Wrote ${p}`);
+      console.log(`Wrote ${rulePath}`);
+      console.log('Restart Cursor (or reload the window) so it picks up the MCP server and rule.');
     } else {
       console.log(JSON.stringify(snippet, null, 2));
       console.log('\nClaude Code:  claude mcp add memini -- npx -y memini mcp');
@@ -432,8 +435,9 @@ program
     const hooksOk =
       existsSync(claudeSettings) && readFileSync(claudeSettings, 'utf-8').includes('claude-pre-tool-use');
     checks.push(['claude-code hooks', hooksOk, `run \`pm install-hooks\``]);
-    const cursorOk = existsSync(join(r, '.cursor', 'mcp.json'));
-    checks.push(['cursor mcp config', cursorOk, `run \`pm install-mcp --write cursor\` (optional)`]);
+    const cursorOk =
+      existsSync(join(r, '.cursor', 'mcp.json')) && existsSync(join(r, '.cursor', 'rules', 'memini.mdc'));
+    checks.push(['cursor mcp + rule', cursorOk, `run \`pm install-mcp --write cursor\` (optional)`]);
     for (const [name, ok, fix] of checks) {
       console.log(`${ok ? '✓' : '✗'} ${name}${ok ? '' : `  → ${fix}`}`);
     }

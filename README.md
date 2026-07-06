@@ -38,13 +38,22 @@ npx -y memini remember failed_attempt \
 
 That's it. Next time any Claude Code session in this repo tries to edit `vercel.json`, it gets the warning first.
 
-**Other agents (Cursor, Windsurf, any MCP client):**
+**Cursor, Windsurf, and other MCP clients:**
 
 ```bash
 claude mcp add memini -- npx -y memini mcp   # Claude Code MCP
-npx -y memini install-mcp --write cursor            # Cursor
-npx -y memini install-mcp                           # print generic config
+npx -y memini install-mcp --write cursor     # Cursor: writes .cursor/mcp.json + an always-on rule
+npx -y memini install-mcp                    # print generic MCP config
 ```
+
+**How enforcement differs by tool.** The *enforced* guardrail — an edit blocked
+before it happens, whether or not the agent thinks to check — relies on a
+PreToolUse hook that today only Claude Code exposes. On Cursor and other MCP
+clients, memini installs the same memory plus the `check_before_editing` /
+`recall_project_context` tools and an always-applied Cursor rule that tells the
+agent to use them. That's strong, but advisory: it works when the agent follows
+the rule, not by interception. Cross-tool enforced hooks land as those tools
+add the capability.
 
 ## CLI
 
