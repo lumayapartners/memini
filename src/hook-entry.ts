@@ -2,10 +2,16 @@
 // Lightweight hook entrypoint: loads only what guardrails need (no commander,
 // no MCP SDK) so the per-edit latency stays low. Invoked by the generated shim
 // in .memini/hooks/ — see installClaudeHooks().
-import { runPreToolUseHook, runSessionStartHook, runCursorPreToolUseHook } from './hooks.js';
+import {
+  runPreToolUseHook,
+  runSessionStartHook,
+  runCursorPreToolUseHook,
+  runCopilotPreToolUseHook,
+} from './hooks.js';
 
 const event = process.argv[2];
 if (event === 'claude-pre-tool-use') await runPreToolUseHook();
 else if (event === 'claude-session-start') await runSessionStartHook();
 else if (event === 'cursor-pre-tool-use') await runCursorPreToolUseHook();
+else if (event === 'copilot-pre-tool-use') await runCopilotPreToolUseHook();
 // unknown events exit 0 silently: fail open, forward compatible

@@ -122,6 +122,84 @@ function cursorAllow(): void {
   process.exitCode = 0;
 }
 
+// GitHub Copilot uses different edit-tool names per surface (CLI / cloud / editor).
+const COPILOT_EDIT_TOOLS = new Set([
+  'edit',
+  'editfiles',
+  'str_replace',
+  'str_replace_editor',
+  'create',
+  'createfile',
+  'write',
+  'applypatch',
+  'insert_edit_into_file',
+  'deletefile',
+]);
+
+interface CopilotHookInput {
+  cwd?: string;
+  toolName?: string; // CLI native dialect
+  toolArgs?: string; // CLI native dialect: a JSON-encoded STRING
+  tool_name?: string; // VS Code / Claude-compatible dialect
+  tool_input?: Record<string, unknown>; // VS Code dialect: an object
+}
+
+/**
+ * GitHub Copilot preToolUse hook (CLI, cloud agent, and VS Code editor agent
+ * mode in preview). Handles both wire dialects:
+ *   - CLI native:  toolName + toolArgs(JSON string), flat output
+ *   - VS Code:     tool_name + tool_input(object),  wrapped output
+ * We emit BOTH output shapes (extra keys are ignored) and use exit code 2 to
+ * deny, so a block lands regardless of which surface is running us. Copilot
+ * times out fail-OPEN, so the shim's speed (SQLite lookup, ~ms) is the guard.
+ */
+export async function runCopilotPreToolUseHook(): Promise<void> {
+  try {
+    const input = JSON.parse(await readStdin()) as CopilotHookInput;
+    const toolName = (input.toolName ?? input.tool_name ?? '').toLowerCase();
+    if (!COPILOT_EDIT_TOOLS.has(toolName)) return copilotAllow();
+
+    let args: Record<string, unknown> = input.tool_input ?? {};
+    if (input.toolArgs) {
+      try {
+        args = JSON.parse(input.toolArgs) as Record<string, unknown>;
+      } catch {
+        /* leave args empty */
+      }
+    }
+    const filePath = (args.file_path ?? args.filePath ?? args.path) as string | undefined;
+    if (!filePath) return copilotAllow();
+
+    const cwd = input.cwd ?? process.cwd();
+    const hits = checkAllScopes(cwd, filePath);
+    if (hits.length === 0) return copilotAllow();
+
+    const reason = formatGuardrailWarning(filePath, hits);
+    const hasBlock = hits.some((h) => h.memory.severity === 'block');
+    const decision = hasBlock ? 'deny' : 'ask';
+    // both dialects in one payload; extra keys are ignored by each surface
+    process.stdout.write(
+      JSON.stringify({
+        permissionDecision: decision,
+        permissionDecisionReason: reason,
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: decision,
+          permissionDecisionReason: reason,
+        },
+      })
+    );
+    process.exitCode = hasBlock ? 2 : 0; // exit 2 == deny across dialects; ask stays 0
+  } catch {
+    return copilotAllow();
+  }
+}
+
+function copilotAllow(): void {
+  // allow == no output, exit 0 (both dialects)
+  process.exitCode = 0;
+}
+
 /** Claude Code SessionStart hook: inject the memory digest (all scopes) as context. */
 export async function runSessionStartHook(): Promise<void> {
   try {
@@ -293,6 +371,39 @@ export function installCursorHooks(root: string): { path: string; changed: boole
   ];
   const changed = kept.length !== list.length || list.length !== desired.length;
   cfg.hooks.preToolUse = [...kept, ...desired];
+  if (changed) {
+    mkdirSync(dirname(cfgPath), { recursive: true });
+    writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n');
+  }
+  return { path: cfgPath, changed };
+}
+
+/**
+ * Install a GitHub Copilot preToolUse hook into <repo>/.github/hooks/memini.json
+ * (CLI-native format, which the Copilot CLI, cloud agent, and VS Code editor
+ * agent mode all read). Covers macOS/Linux via the shared shim; Windows/
+ * PowerShell users get the git pre-commit backstop until a .ps1 shim lands.
+ */
+export function installCopilotHooks(root: string): { path: string; changed: boolean } {
+  writeShim(root);
+  const cfgPath = join(root, '.github', 'hooks', 'memini.json');
+  const bash = `sh ${SHIM_REL} copilot-pre-tool-use`;
+  interface CopilotHookDef {
+    type: 'command';
+    bash?: string;
+    powershell?: string;
+    timeoutSec?: number;
+  }
+  let cfg: { version?: number; hooks?: Record<string, CopilotHookDef[]> } = {};
+  if (existsSync(cfgPath)) cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'));
+  cfg.version ??= 1;
+  cfg.hooks ??= {};
+  const list = cfg.hooks.preToolUse ?? [];
+  const isOurs = (d: CopilotHookDef) => (d.bash ?? '').includes(SHIM_REL);
+  const kept = list.filter((d) => !isOurs(d));
+  const entry: CopilotHookDef = { type: 'command', bash, timeoutSec: 10 };
+  const changed = kept.length !== list.length || list.length !== 1;
+  cfg.hooks.preToolUse = [...kept, entry];
   if (changed) {
     mkdirSync(dirname(cfgPath), { recursive: true });
     writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n');

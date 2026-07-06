@@ -42,24 +42,24 @@ That's it. Next time any Claude Code session in this repo tries to edit `vercel.
 
 ```bash
 claude mcp add memini -- npx -y memini mcp   # Claude Code MCP
-npx -y memini install-mcp --write cursor     # Cursor: writes .cursor/mcp.json + an always-on rule
+npx -y memini install-mcp --write cursor     # Cursor: MCP + rule + enforced preToolUse hook
+npx -y memini install-copilot                # GitHub Copilot: enforced preToolUse hook (.github/hooks)
 npx -y memini install-mcp                    # print generic MCP config
 ```
 
 **Enforcement is a chain of gates, and memini covers several:**
 
-- **Before the edit — Claude Code** (PreToolUse hook) and **Cursor** (`preToolUse` hook,
-  Cursor 1.7+): the edit to a guardrailed file is blocked before it happens. `block` → denied,
-  `warn` → the user is prompted with the recorded history.
+- **Before the edit** — the edit to a guardrailed file is blocked before it happens.
+  `block` → denied, `warn` → the user is prompted with the recorded history. Supported on:
+  - **Claude Code** — `pm init` installs it
+  - **Cursor** (1.7+) — `pm install-mcp --write cursor`
+  - **GitHub Copilot** — CLI, cloud coding agent, and VS Code agent mode (preview) — `pm install-copilot`
 - **Before the commit — every tool** — a git pre-commit guardrail blocks a commit that touches
-  a `block`-severity file, no matter which IDE or agent made the edit (VS Code Copilot, Windsurf,
-  Cline, a human…). Installed by `pm init` (or `pm install-hooks --git`). Fails open; overridable
-  with `git commit --no-verify`.
+  a `block`-severity file, no matter which IDE or agent made the edit (Windsurf, Cline, a human…).
+  Installed by `pm init` (or `pm install-hooks --git`). Fails open; overridable with
+  `git commit --no-verify`.
 - **Advisory — any MCP client** — the `check_before_editing` / `recall_project_context` tools,
   plus an always-applied Cursor rule steering the agent to use them.
-
-`pm install-mcp --write cursor` sets up all three for Cursor (MCP tools, rule, and the enforced
-hook). GitHub Copilot's hook adapter is next on the roadmap.
 
 ## CLI
 

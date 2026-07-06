@@ -12,6 +12,7 @@ import { checkAllScopes, openScopedStores, openStoreForScope, resolveScopes } fr
 import {
   cursorRule,
   installClaudeHooks,
+  installCopilotHooks,
   installCursorHooks,
   installGitHook,
   mcpConfigSnippet,
@@ -409,6 +410,15 @@ program
   });
 
 program
+  .command('install-copilot')
+  .description('Install a GitHub Copilot preToolUse guardrail (.github/hooks/) — CLI, cloud agent, and VS Code agent mode')
+  .action(() => {
+    const { path, changed } = installCopilotHooks(root());
+    console.log(changed ? `Installed Copilot guardrail in ${path}` : `Copilot guardrail already installed (${path})`);
+    console.log('Applies to Copilot CLI, the cloud coding agent, and VS Code agent mode (preview).');
+  });
+
+program
   .command('install-mcp')
   .description('Print MCP server config for Cursor / Windsurf / Claude Code')
   .option('--write <tool>', 'write config file for: cursor')
@@ -510,6 +520,8 @@ program
       existsSync(join(r, '.cursor', 'rules', 'memini.mdc')) &&
       existsSync(join(r, '.cursor', 'hooks.json'));
     checks.push(['cursor mcp + rule + hooks', cursorOk, `run \`pm install-mcp --write cursor\` (optional)`]);
+    const copilotOk = existsSync(join(r, '.github', 'hooks', 'memini.json'));
+    checks.push(['copilot guardrail', copilotOk, `run \`pm install-copilot\` (optional)`]);
     for (const [name, ok, fix] of checks) {
       console.log(`${ok ? '✓' : '✗'} ${name}${ok ? '' : `  → ${fix}`}`);
     }
