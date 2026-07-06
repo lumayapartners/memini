@@ -46,14 +46,19 @@ npx -y memini install-mcp --write cursor     # Cursor: writes .cursor/mcp.json +
 npx -y memini install-mcp                    # print generic MCP config
 ```
 
-**How enforcement differs by tool.** The *enforced* guardrail — an edit blocked
-before it happens, whether or not the agent thinks to check — relies on a
-PreToolUse hook that today only Claude Code exposes. On Cursor and other MCP
-clients, memini installs the same memory plus the `check_before_editing` /
-`recall_project_context` tools and an always-applied Cursor rule that tells the
-agent to use them. That's strong, but advisory: it works when the agent follows
-the rule, not by interception. Cross-tool enforced hooks land as those tools
-add the capability.
+**Enforcement is a chain of gates, and memini covers several:**
+
+- **Before the edit** (Claude Code) — a PreToolUse hook blocks the edit before it happens.
+- **Before the commit** (every tool) — a git pre-commit guardrail blocks a commit that
+  touches a `block`-severity file, no matter which IDE or agent made the edit. Installed by
+  `pm init` (or `pm install-hooks --git`). Fails open; overridable with `git commit --no-verify`.
+- **Advisory** (Cursor, Windsurf, any MCP client) — the `check_before_editing` /
+  `recall_project_context` tools plus an always-applied Cursor rule steering the agent to use
+  them. Works when the agent follows the rule.
+
+So on Cursor/VS Code today you get advisory guidance *plus* enforced blocking at commit time.
+Native pre-edit hooks for those IDEs are on the roadmap (Cursor and GitHub Copilot now expose
+their own PreToolUse hooks).
 
 ## CLI
 

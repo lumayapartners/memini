@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -9,7 +9,14 @@ import { findRepoRoot } from './git.js';
 import { renderMarkdown } from './render.js';
 import { buildScopedDigest } from './digest.js';
 import { checkAllScopes, openScopedStores, openStoreForScope, resolveScopes } from './scopes.js';
-import { cursorRule, installClaudeHooks, mcpConfigSnippet, runPreToolUseHook, runSessionStartHook } from './hooks.js';
+import {
+  cursorRule,
+  installClaudeHooks,
+  installGitHook,
+  mcpConfigSnippet,
+  runPreToolUseHook,
+  runSessionStartHook,
+} from './hooks.js';
 import { Memory, MEMORY_TYPES, MemoryType, SEVERITIES, Severity } from './types.js';
 import { VERSION } from './version.js';
 
@@ -79,8 +86,11 @@ program
 
     console.log(`Initialized ${PM_DIR}/ in ${r}`);
     if (opts.hooks) {
-      const { path, changed } = installClaudeHooks(r);
-      console.log(changed ? `Installed Claude Code guardrail hooks in ${path}` : `Claude Code hooks already installed (${path})`);
+      const claude = installClaudeHooks(r);
+      console.log(claude.changed ? `Installed Claude Code guardrail hooks in ${claude.path}` : `Claude Code hooks already installed (${claude.path})`);
+      // git pre-commit guardrail is tool-agnostic — enforces even for Cursor/VS Code/other agents
+      const gitHook = installGitHook(r);
+      console.log(gitHook.changed ? `Installed git pre-commit guardrail in ${gitHook.path}` : `Git pre-commit guardrail already installed (${gitHook.path})`);
     }
     console.log('\nNext steps:');
     console.log('  pm remember failed_attempt "Editing vercel.json broke the build" --file vercel.json --severity warn');
@@ -381,10 +391,20 @@ program
 
 program
   .command('install-hooks')
-  .description('Install Claude Code guardrail hooks into .claude/settings.json')
-  .action(() => {
-    const { path, changed } = installClaudeHooks(root());
-    console.log(changed ? `Installed hooks in ${path}` : `Hooks already installed (${path})`);
+  .description('Install guardrail hooks. Default: Claude Code + git pre-commit (tool-agnostic).')
+  .option('--claude', 'Claude Code hooks only')
+  .option('--git', 'git pre-commit hook only (works with any IDE/agent)')
+  .action((opts: { claude?: boolean; git?: boolean }) => {
+    const r = root();
+    const both = !opts.claude && !opts.git;
+    if (opts.claude || both) {
+      const { path, changed } = installClaudeHooks(r);
+      console.log(changed ? `Installed Claude Code hooks in ${path}` : `Claude Code hooks already installed (${path})`);
+    }
+    if (opts.git || both) {
+      const { path, changed } = installGitHook(r);
+      console.log(changed ? `Installed git pre-commit hook in ${path}` : `Git pre-commit hook already installed (${path})`);
+    }
   });
 
 program
@@ -425,6 +445,49 @@ program
   });
 
 program
+  .command('precommit')
+  .description('Guardrail check on staged files — blocks the commit on BLOCK-severity memories. Tool-agnostic: works no matter which IDE or agent made the edit.')
+  .action(() => {
+    const r = root();
+    let staged: string[] = [];
+    try {
+      staged = execFileSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACM'], {
+        cwd: r,
+        encoding: 'utf-8',
+      })
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } catch {
+      process.exit(0); // no git / no staged files: fail open, never block a commit on our error
+    }
+    let blocked = false;
+    let warned = false;
+    for (const file of staged) {
+      const hits = checkAllScopes(r, file);
+      for (const { memory: m, scope } of hits) {
+        const tag = scope !== 'project' ? ` [${scope}]` : '';
+        if (m.severity === 'block') {
+          blocked = true;
+          console.error(`\n✋ BLOCKED${tag}: ${file}`);
+          console.error(`   ${m.title} (${m.id.slice(0, 8)})`);
+          console.error(`   ${m.body.trim().split('\n')[0]}`);
+        } else {
+          warned = true;
+          console.error(`\n⚠  WARNING${tag}: ${file} — ${m.title} (${m.id.slice(0, 8)})`);
+        }
+      }
+    }
+    if (blocked) {
+      console.error(`\nCommit blocked by memini. To override a specific memory: pm archive <id>`);
+      console.error(`To bypass all guardrails for this one commit: git commit --no-verify\n`);
+      process.exit(3); // distinct code: the hook blocks ONLY on 3, so command errors fail open
+    }
+    if (warned) console.error(`\n(warnings only — commit allowed)\n`);
+    process.exit(0);
+  });
+
+program
   .command('doctor')
   .description('Diagnose setup: store, hooks, MCP config')
   .action(() => {
@@ -435,6 +498,9 @@ program
     const hooksOk =
       existsSync(claudeSettings) && readFileSync(claudeSettings, 'utf-8').includes('claude-pre-tool-use');
     checks.push(['claude-code hooks', hooksOk, `run \`pm install-hooks\``]);
+    const gitHookPath = join(r, '.git', 'hooks', 'pre-commit');
+    const gitOk = existsSync(gitHookPath) && readFileSync(gitHookPath, 'utf-8').includes('memini precommit');
+    checks.push(['git pre-commit guardrail', gitOk, `run \`pm install-hooks --git\``]);
     const cursorOk =
       existsSync(join(r, '.cursor', 'mcp.json')) && existsSync(join(r, '.cursor', 'rules', 'memini.mdc'));
     checks.push(['cursor mcp + rule', cursorOk, `run \`pm install-mcp --write cursor\` (optional)`]);

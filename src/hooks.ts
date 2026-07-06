@@ -196,6 +196,30 @@ export function installClaudeHooks(root: string): { path: string; changed: boole
   return { path: settingsPath, changed };
 }
 
+/**
+ * Install a git pre-commit hook that runs `pm precommit`. Tool-agnostic
+ * enforcement: blocks commits touching BLOCK-severity files regardless of which
+ * IDE or agent made the edit. Chains to any existing pre-commit hook.
+ */
+export function installGitHook(root: string): { path: string; changed: boolean } {
+  const hookPath = join(root, '.git', 'hooks', 'pre-commit');
+  const MARKER = '# >>> memini pre-commit >>>';
+  // Fail open: block the commit ONLY on exit code 3 (a real BLOCK-severity guardrail).
+  // Any other outcome — command missing, offline npx, crash — allows the commit.
+  const block = `${MARKER}\nnpx -y memini precommit; [ $? -eq 3 ] && exit 1\n# <<< memini pre-commit <<<\n`;
+
+  if (existsSync(hookPath)) {
+    const current = readFileSync(hookPath, 'utf-8');
+    if (current.includes(MARKER)) return { path: hookPath, changed: false };
+    // append our block to the existing hook
+    writeFileSync(hookPath, current.replace(/\s*$/, '\n') + '\n' + block, { mode: 0o755 });
+    return { path: hookPath, changed: true };
+  }
+  mkdirSync(dirname(hookPath), { recursive: true });
+  writeFileSync(hookPath, `#!/bin/sh\n${block}`, { mode: 0o755 });
+  return { path: hookPath, changed: true };
+}
+
 /** Generate MCP client config snippets for other tools (Cursor, Windsurf). */
 export function mcpConfigSnippet(): object {
   return {
