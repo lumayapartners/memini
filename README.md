@@ -1,5 +1,9 @@
 # memini
 
+[![npm version](https://img.shields.io/npm/v/memini)](https://www.npmjs.com/package/memini)
+[![CI](https://github.com/lumayapartners/memini/actions/workflows/ci.yml/badge.svg)](https://github.com/lumayapartners/memini/actions/workflows/ci.yml)
+[![memini MCP server](https://glama.ai/mcp/servers/lumayapartners/memini/badges/score.svg)](https://glama.ai/mcp/servers/lumayapartners/memini)
+
 **Never the same mistake twice.** Mistake-prevention guardrails and persistent project memory for AI coding agents.
 
 AI coding agents are stateless: every session starts with amnesia. The agent that broke your build editing `vercel.json` on Monday will happily try the exact same edit on Thursday. `memini` gives each repo a persistent memory of **failed attempts, fragile files, decisions, and deployment rules** — and *force-feeds* the relevant warning to the agent at the moment it's about to repeat history.
