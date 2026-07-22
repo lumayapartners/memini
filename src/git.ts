@@ -18,6 +18,14 @@ export interface GitContext {
   root: string | null;
 }
 
+/** Tracked files changed vs HEAD (staged + working tree), repo-relative. Empty if clean/no repo. */
+export function changedFiles(cwd: string): string[] {
+  // --name-only gives plain paths, no status columns to parse.
+  const out = git(cwd, ['diff', '--name-only', 'HEAD']);
+  if (!out) return [];
+  return out.split('\n').map((l) => l.trim()).filter(Boolean);
+}
+
 export function gitContext(cwd: string): GitContext {
   return {
     branch: git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']),

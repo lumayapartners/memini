@@ -5,6 +5,7 @@
 import {
   runPreToolUseHook,
   runSessionStartHook,
+  runStopHook,
   runCursorPreToolUseHook,
   runCopilotPreToolUseHook,
 } from './hooks.js';
@@ -12,6 +13,7 @@ import {
 const event = process.argv[2];
 if (event === 'claude-pre-tool-use') await runPreToolUseHook();
 else if (event === 'claude-session-start') await runSessionStartHook();
+else if (event === 'claude-stop') await runStopHook();
 else if (event === 'cursor-pre-tool-use') await runCursorPreToolUseHook();
 else if (event === 'copilot-pre-tool-use') await runCopilotPreToolUseHook();
 // unknown events exit 0 silently: fail open, forward compatible

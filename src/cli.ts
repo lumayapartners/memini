@@ -9,6 +9,7 @@ import { findRepoRoot } from './git.js';
 import { renderMarkdown } from './render.js';
 import { buildScopedDigest } from './digest.js';
 import { checkAllScopes, openScopedStores, openStoreForScope, resolveScopes } from './scopes.js';
+import { collectMemories, computeStats, reviewMemories } from './insights.js';
 import {
   cursorRule,
   installClaudeHooks,
@@ -381,6 +382,63 @@ program
     renderMarkdown(store);
     console.log(`Re-verified ${m.id.slice(0, 8)}: ${m.title}`);
     store.close();
+  });
+
+program
+  .command('stats')
+  .description('Show what your memory is doing: guardrail fires, coverage, staleness')
+  .option('--json', 'JSON output')
+  .action((opts: { json?: boolean }) => {
+    const items = collectMemories(process.cwd());
+    const s = computeStats(items);
+    if (opts.json) {
+      console.log(JSON.stringify(s, null, 2));
+      return;
+    }
+    if (s.total === 0) {
+      console.log('No memories yet. Record one with `pm remember`.');
+      return;
+    }
+    console.log(`${s.total} memories · ${s.guardrails} guardrails · ${s.totalFires} total guardrail fires\n`);
+    console.log('By type:   ' + Object.entries(s.byType).map(([t, n]) => `${t} ${n}`).join(', '));
+    console.log('By scope:  ' + Object.entries(s.byScope).map(([t, n]) => `${t} ${n}`).join(', '));
+    if (s.topFired.length) {
+      console.log('\nMost useful (guardrails that actually fired):');
+      for (const { memory: m, scope } of s.topFired) {
+        const tag = scope !== 'project' ? ` [${scope}]` : '';
+        console.log(`  ${m.fireCount}×  ${m.title}${tag}  (last ${m.lastFiredAt?.slice(0, 10) ?? '?'})`);
+      }
+    }
+    const notes: string[] = [];
+    if (s.neverFired) notes.push(`${s.neverFired} guardrail(s) have never fired`);
+    if (s.stale) notes.push(`${s.stale} memory(ies) stale (referenced code changed)`);
+    if (notes.length) console.log('\n' + notes.join(' · ') + '   → run `pm review`');
+  });
+
+program
+  .command('review')
+  .description('Surface memory-quality issues: duplicates, contradictions, dormant guardrails')
+  .option('--json', 'JSON output')
+  .action((opts: { json?: boolean }) => {
+    const items = collectMemories(process.cwd());
+    const findings = reviewMemories(items);
+    if (opts.json) {
+      console.log(JSON.stringify(findings.map((f) => ({ kind: f.kind, detail: f.detail, ids: f.memories.map((m) => m.memory.id) })), null, 2));
+      return;
+    }
+    if (findings.length === 0) {
+      console.log('No quality issues found. Memory looks healthy.');
+      return;
+    }
+    const label: Record<string, string> = { duplicate: 'DUPLICATE', contradiction: 'CONTRADICTION', dormant: 'DORMANT' };
+    for (const f of findings) {
+      console.log(`\n[${label[f.kind]}] ${f.detail}`);
+      for (const { memory: m, scope } of f.memories) {
+        const tag = scope !== 'project' ? ` [${scope}]` : '';
+        console.log(`  ${m.id.slice(0, 8)}  ${m.title}${tag}`);
+      }
+    }
+    console.log(`\nResolve with: pm archive <id> (drop one), pm edit <id> (merge/fix), pm verify <id> (keep).`);
   });
 
 program

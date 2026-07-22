@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS memories (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   created_by TEXT NOT NULL DEFAULT 'unknown',
-  source_session TEXT
+  source_session TEXT,
+  fire_count INTEGER NOT NULL DEFAULT 0,
+  last_fired_at TEXT
 );
 CREATE TABLE IF NOT EXISTS memory_refs (
   memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
@@ -76,6 +78,8 @@ interface MemoryRow {
   updated_at: string;
   created_by: string;
   source_session: string | null;
+  fire_count: number;
+  last_fired_at: string | null;
 }
 
 export type Scope = 'project' | 'workspace' | 'user';
@@ -96,9 +100,36 @@ export class MemoryStore {
     this.db = new Database(join(this.dir, 'memory.db'));
     this.db.pragma('journal_mode = WAL');
     this.db.exec(SCHEMA);
+    this.migrate();
     // GC stale warn-once rows so the table stays bounded over a repo's lifetime
     const cutoff = new Date(Date.now() - SESSION_WARNING_TTL_DAYS * 86_400_000).toISOString();
     this.db.prepare(`DELETE FROM session_warnings WHERE warned_at < ?`).run(cutoff);
+  }
+
+  /** Idempotent column additions for DBs created before a schema bump. */
+  private migrate(): void {
+    const cols = new Set(
+      (this.db.prepare(`PRAGMA table_info(memories)`).all() as { name: string }[]).map((c) => c.name)
+    );
+    if (!cols.has('fire_count')) {
+      this.db.exec(`ALTER TABLE memories ADD COLUMN fire_count INTEGER NOT NULL DEFAULT 0`);
+    }
+    if (!cols.has('last_fired_at')) {
+      this.db.exec(`ALTER TABLE memories ADD COLUMN last_fired_at TEXT`);
+    }
+  }
+
+  /** Record that a memory's guardrail actually fired. Avoids the FTS update trigger. */
+  recordFire(ids: string[]): void {
+    if (ids.length === 0) return;
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(
+      `UPDATE memories SET fire_count = fire_count + 1, last_fired_at = ? WHERE id = ?`
+    );
+    const tx = this.db.transaction((list: string[]) => {
+      for (const id of list) stmt.run(now, id);
+    });
+    tx(ids);
   }
 
   static exists(root: string): boolean {
@@ -189,6 +220,8 @@ export class MemoryStore {
       updatedAt: row.updated_at,
       createdBy: row.created_by,
       sourceSession: row.source_session,
+      fireCount: row.fire_count ?? 0,
+      lastFiredAt: row.last_fired_at,
       refs,
     };
   }

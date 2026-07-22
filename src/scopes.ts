@@ -69,7 +69,8 @@ export function openStoreForScope(cwd: string, scope: Scope): MemoryStore {
  */
 export function checkAllScopes(
   cwd: string,
-  filePath: string
+  filePath: string,
+  opts: { recordFires?: boolean } = {}
 ): { memory: import('./types.js').Memory; scope: Scope }[] {
   const stores = openScopedStores(cwd);
   const projectRoot = findRepoRoot(cwd);
@@ -78,6 +79,8 @@ export function checkAllScopes(
   try {
     for (const { store, scope } of stores) {
       const found = scope === 'project' ? store.check(filePath) : store.checkPattern(rel);
+      // Count a real guardrail intervention as a "fire" (not manual `pm check`).
+      if (opts.recordFires && found.length) store.recordFire(found.map((m) => m.id));
       hits.push(...found.map((memory) => ({ memory, scope })));
     }
   } finally {

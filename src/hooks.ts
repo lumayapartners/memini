@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MemoryStore } from './store.js';
-import { findRepoRoot } from './git.js';
+import { findRepoRoot, changedFiles } from './git.js';
 import { buildScopedDigest, formatGuardrailWarning } from './digest.js';
 import { checkAllScopes, openScopedStores } from './scopes.js';
 
@@ -37,7 +37,7 @@ export async function runPreToolUseHook(): Promise<void> {
 
     const cwd = input.cwd ?? process.cwd();
     const root = findRepoRoot(cwd);
-    const hits = checkAllScopes(cwd, filePath);
+    const hits = checkAllScopes(cwd, filePath, { recordFires: true });
     if (hits.length === 0) return allow();
 
     const blocks = hits.filter((h) => h.memory.severity === 'block');
@@ -97,7 +97,7 @@ export async function runCursorPreToolUseHook(): Promise<void> {
     if (!filePath) return cursorAllow();
 
     const cwd = input.cwd ?? input.workspace_roots?.[0] ?? process.cwd();
-    const hits = checkAllScopes(cwd, filePath);
+    const hits = checkAllScopes(cwd, filePath, { recordFires: true });
     if (hits.length === 0) return cursorAllow();
 
     const warning = formatGuardrailWarning(filePath, hits);
@@ -171,7 +171,7 @@ export async function runCopilotPreToolUseHook(): Promise<void> {
     if (!filePath) return copilotAllow();
 
     const cwd = input.cwd ?? process.cwd();
-    const hits = checkAllScopes(cwd, filePath);
+    const hits = checkAllScopes(cwd, filePath, { recordFires: true });
     if (hits.length === 0) return copilotAllow();
 
     const reason = formatGuardrailWarning(filePath, hits);
@@ -219,6 +219,47 @@ export async function runSessionStartHook(): Promise<void> {
     }
   } catch {
     /* fail open */
+  }
+}
+
+interface ClaudeStopInput {
+  cwd?: string;
+  stop_hook_active?: boolean;
+}
+
+/**
+ * Claude Code Stop hook: at session end, if the working tree changed, nudge the
+ * agent to record any durable lesson (fix, fragile file, failed approach) via
+ * the memini MCP tools — reducing the "remember to remember" tax. Fires at most
+ * once per session (stop_hook_active loop guard) and stays silent when nothing
+ * changed, so it never wastes a turn on an idle session.
+ */
+export async function runStopHook(): Promise<void> {
+  try {
+    const input = JSON.parse(await readStdin()) as ClaudeStopInput;
+    if (input.stop_hook_active) return; // already re-entered once; don't loop
+    const cwd = input.cwd ?? process.cwd();
+    const root = findRepoRoot(cwd);
+    if (!MemoryStore.exists(root)) return;
+    const changed = changedFiles(cwd);
+    if (changed.length === 0) return; // idle session, nothing to record
+
+    const files = changed.slice(0, 8).join(', ');
+    process.stdout.write(
+      JSON.stringify({
+        decision: 'block',
+        reason:
+          `Before finishing: this session changed ${changed.length} file(s) (${files}). ` +
+          `If you discovered something worth remembering for next time — a fix that worked, a file that's ` +
+          `fragile, or an approach that FAILED — record it now with the memini tools ` +
+          `(remember_failed_attempt / remember_fragile_file / remember_decision / end_session_summary). ` +
+          `Record only durable, non-obvious lessons; skip routine changes. ` +
+          `If there is nothing worth recording, reply "nothing to record" and stop.`,
+      })
+    );
+    process.exitCode = 0;
+  } catch {
+    /* fail open: never trap the agent at session end */
   }
 }
 
@@ -288,6 +329,9 @@ const PRE_TOOL_USE: HookEntry = {
 const SESSION_START: HookEntry = {
   hooks: [{ type: 'command', command: `${SHIM_CMD} claude-session-start` }],
 };
+const STOP: HookEntry = {
+  hooks: [{ type: 'command', command: `${SHIM_CMD} claude-stop` }],
+};
 
 /** Idempotently install guardrail hooks into <repo>/.claude/settings.json. */
 export function installClaudeHooks(root: string): { path: string; changed: boolean } {
@@ -315,6 +359,7 @@ export function installClaudeHooks(root: string): { path: string; changed: boole
   };
   ensure('PreToolUse', PRE_TOOL_USE);
   ensure('SessionStart', SESSION_START);
+  ensure('Stop', STOP);
 
   if (changed) {
     settings.hooks = hooks;

@@ -61,6 +61,21 @@ npx -y memini install-mcp                    # print generic MCP config
 - **Advisory — any MCP client** — the `check_before_editing` / `recall_project_context` tools,
   plus an always-applied Cursor rule steering the agent to use them.
 
+## Keeping memory useful over time
+
+A memory tool is only as good as what's in it, and it rots if left alone. memini keeps it healthy:
+
+- **Auto-capture** — a Claude Code session-end hook nudges the agent to record durable lessons
+  (a fix that worked, a fragile file, a failed approach) when a session actually changed files,
+  so you don't have to remember to `pm remember`. It stays silent on idle sessions.
+- **Usefulness tracking** — every time a guardrail actually fires, memini counts it. `pm stats`
+  shows which memories are pulling their weight and which have never fired.
+- **`pm review`** — flags near-duplicates, contradictory guardrails on the same file, and dormant
+  guardrails that have never fired long after creation. All local heuristics, no LLM — you decide
+  what to keep, merge, or archive.
+- **Git-aware staleness** — memories hash the files they reference; when the code changes, the
+  memory is flagged and stops firing until re-verified (`pm stale` / `pm verify`).
+
 ## CLI
 
 | Command | What it does |
@@ -70,6 +85,8 @@ npx -y memini install-mcp                    # print generic MCP config
 | `pm recall [query] [--file f] [--digest]` | Search memories / preview the agent digest |
 | `pm check <path>` | Guardrail check (exit 1 if risks recorded) — usable in CI |
 | `pm list / show / archive / approve <id>` | Manage memories |
+| `pm stats` | What your memory is doing — guardrail fires, coverage, staleness |
+| `pm review` | Surface quality issues: duplicates, contradictions, dormant guardrails |
 | `pm stale` / `pm verify <id>` | Detect and re-verify outdated memories |
 | `pm mcp` | Run the MCP server (stdio) |
 | `pm doctor` | Diagnose setup |

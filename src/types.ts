@@ -36,6 +36,8 @@ export interface Memory {
   updatedAt: string;
   createdBy: string;
   sourceSession?: string | null;
+  fireCount: number;
+  lastFiredAt?: string | null;
   refs: MemoryRef[];
 }
 
